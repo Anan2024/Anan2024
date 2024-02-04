@@ -1,0 +1,92 @@
+% Calculate features of Run Lengths (RL)
+function [P5, P25, P50, P75, P95, ARL, SDRL] = StatisticalMeasures(m, n, UCL, lambda, delta1, delta2, delta3,
+t, LOOP)
+% StatisticalMeasures - Function to compute features of Run Lengths (RL)
+% Inputs:
+% m - Sample size for reference data
+% n - Sample size for test data
+% UCL - Upper Control Limit
+% lambda - The smoothing parameter for EWMA
+% delta1- The location shift
+% delta2- The scale shift
+% delta3- The shape shift
+% t - Total number of time points
+% LOOP - Number of simulation loops
+% Outputs:
+% P5, P25, P50, P75, P95 - Percentiles of RL (5th, 25th, 50th, 75th, 95th)
+% ARL - Average Run Length
+% SDRL - Standard Deviation of Run Length
+
+% Initialize Run Lengths
+RL = ones(1, LOOP) * t;
+% Calculate mean and variance for Wilcoxon function
+N = m + n;
+muW = n * (N + 1) / 2;
+sigmaW = m * n * (N + 1) / 12;
+% Calculate mean and variance for AB function
+if mod(N, 2) == 0
+muAB = n * N / 4;
+sigmaAB = m * n * (N^2 - 4) / (48 * (N - 1));
+else
+muAB = n * (N^2 - 1) / (4 * N);
+sigmaAB = m * n * (N + 1) * (N^2 + 3) / (48 * N^2);
+end
+% Calculate mean and variance for SA function
+muSA = 0;
+Sa = zeros(1, N);
+for i = 1:N
+Sa(i) = 1 / i;
+end
+sigmaSA = m * n / (N - 1) * (1 - 1 / N * sum(Sa));
+% Start the simulation loop
+for ii = 1:LOOP
+mu0=0;
+sigma0=1;
+X = normrnd(mu0,sigma0,1,m);
+YY=nthroot(rand(n,t),delta3);
+Yorgin=norminv(YY,0,1).*delta2+delta1;
+
+Y=Yorgin';
+% Initialize variables
+N1 = zeros(m+n,1);
+N1order=zeros(n,1);
+L=zeros(n,1);
+T1 = zeros(1,t);
+T2 = zeros(1,t);
+T3 = zeros(1,t);
+Z1=zeros(1,t+1);
+Z2=zeros(1,t+1);
+Z3=zeros(1,t+1);
+Z=zeros(1,t);
+Z1(1)=1;
+Z2(1)=1;
+Z3(1)=1;
+% Loop over time points
+for i=1:t
+N1= sort([X Y(i,:)]);
+[~,N1order]=ismember(Y(i,:),N1);
+T1(i) = (sum(N1order)-muW)^2/sigmaW;
+N1ORDER=sum(abs(N1order-(N+1)/2));
+T2(i)=(N1ORDER-muAB)^2/sigmaAB;
+for j=1:n
+L(j)=sum(Sa((N-N1order(j)+1):N))-1;
+end
+T3(i)=(sum(L)-muSA)^2/sigmaSA;
+Z1(i+1)=lambda*T1(i)+(1-lambda)*Z1(i);
+Z2(i+1)=lambda*T2(i)+(1-lambda)*Z2(i);
+Z3(i+1)=lambda*T3(i)+(1-lambda)*Z3(i);
+M=[Z1(i+1) Z2(i+1) Z3(i+1)];
+Z(i)=max(M);
+if Z(i)>UCL
+RL(ii)=i;
+break
+end
+end
+end
+P5=prctile(RL,5);
+P25=prctile(RL,25);
+P50=prctile(RL,50);
+P75=prctile(RL,75);
+P95=prctile(RL,95);
+ARL=mean(RL);
+SDRL=std(RL);
